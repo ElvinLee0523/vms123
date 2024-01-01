@@ -576,7 +576,7 @@ function currentTime(){
 
 //generate token for login authentication
 function generateToken(loginProfile){
-  return jwt.sign(loginProfile, 'key' , { expiresIn: '1h' });
+  return jwt.sign(loginProfile,process.env.cibai, { expiresIn: '1h' });
 }
 
 //verify generated tokens
@@ -588,7 +588,7 @@ function verifyToken(req, res, next){
   }
   let header = req.headers.authorization
   let token = header.split(' ')[1] //checking header //process.env.fuckyou
-  jwt.verify(token,'key',function(err,decoded){
+  jwt.verify(token,process.env.cibai,function(err,decoded){
     if(err) {
       res.status(401).send(errorMessage() + "Token is not valid D:, go to the counter to exchange (joke)")
       return
