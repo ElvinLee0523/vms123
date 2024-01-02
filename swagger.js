@@ -339,6 +339,8 @@
  *           application/json:
  *             example:
  *               message: "Registration request processed, visitor is Visitor Name"
+ *       400:
+ *         description: Bad Request. Visitor with the provided reference number already exists.
  *       401:
  *         description: Unauthorized. Token not valid.
  *       500:
