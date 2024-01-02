@@ -218,7 +218,7 @@ app.post('/registervisitor', verifyToken, async (req, res)=>{
   if(authorize){
   const visitorData = await registerVisitor(data, loginUser) //register visitor
     if (visitorData){
-      re.status(200).send("Registration request processed, visitor is " + visitorData.name)
+      res.status(200).send("Registration request processed, visitor is " + visitorData.name)
     }else{
       res.status(400).send(errorMessage() + "Visitor already exists! Add a visit log instead!")
     }
