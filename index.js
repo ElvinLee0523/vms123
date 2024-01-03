@@ -6,11 +6,22 @@ const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
 const bodyParser = require('body-parser');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 const saltRounds = 10;
 const qrCode_c = require('qrcode');
+const { rateLimit } = require('express-rate-limit')
 const { MongoClient, ServerApiVersion } = require('mongodb');
-const uri = "mongodb+srv://ElvinLee:1234567890@elvindata.qte1ayi.mongodb.net/test";
+
+const limiter = rateLimit({
+	windowMs: 1 * 60 * 1000, // 15 minutes
+	max: 5, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+	message : "Too many requests from this IP, please try again after 5 minutes",
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+	legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+})
+
+const uri = "ElvinLee:1234567890@elvindata.qte1ayi.mongodb.net/test" ;
+const credentials = process.env.mongocert;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -18,8 +29,11 @@ const client = new MongoClient(uri, {
       version: ServerApiVersion.v1,
       strict: true,
       deprecationErrors: true, 
-    }
+    },
+    //tlsCertificateKeyFile: credentials
   });
+
+  
 
 //start of port
 client.connect() 
@@ -29,11 +43,9 @@ const user = client.db("Visitor_Management_v1").collection("users")
 const visitor = client.db("Visitor_Management_v1").collection("visitors")
 const visitorLog = client.db("Visitor_Management_v1").collection("visitor_log")
 const pending = client.db("Visitor_Management_v1").collection("Pending_users")
-
-
 //app.use(express.json())
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.urlencoded({ extended: true }) );
 
 app.get('/', (req, res) => {
    res.redirect('/VMS')
@@ -70,20 +82,32 @@ const swaggerSpec = swaggerJsdoc(swaggerOptions);
 app.use('/VMS', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 //login POST request
-app.post('/login', async (req, res) => {
+app.post('/login',limiter, async (req, res) => {
     let data = req.body
     let result = await login(data);
-    const loginuser = result.verify
-    const token = result.token
+    const loginuser = result.verify;
+    const token = result.token;
+    let  j = result.hosts.length;
+    const hosts = result.hosts;
     //check the returned result if its a object, only then can we welcome the user
     if (typeof loginuser == "object") { 
-      res.status(200).send(loginuser.user_id + " has logged in!\nWelcome "+ loginuser.name + "!\nYour token : " + token)
+      if (loginuser.role == "admin"){
+        res.writeHead(200, {'Content-Type': 'text/plain'}); 
+        res.write(loginuser.user_id + " has logged in!\nWelcome "+ loginuser.name + 
+        "!\nYour token : " + token +"\n\nList of hosts : \n"  )
+        for (i=0; i<j; i++){
+        res.write(JSON.stringify(hosts[i]) + "\n-----------------------------------\n" );
+        }
+        res.end("\n\nPlease proceed to the admin page to view the list of hosts")
+      }else{
+      res.status(200).send(loginuser.user_id + " has logged in!\nWelcome "+ loginuser.name +"!\nYour token : " + token)
+      }
     }else {
       //else send the failure message
-      res.status(201).send(errorMessage() + result)
+      res.status(400).send(errorMessage() + result)
     }
   });
-//////
+
 //find user GET request
 app.get('/finduser/:name', verifyToken, async (req, res)=>{
   let authorize = req.user.role //reading the token for authorisation
@@ -100,7 +124,7 @@ app.get('/finduser/:name', verifyToken, async (req, res)=>{
     }
   //token does not exist
   }else {
-      res.status(403).send(errorMessage() + "Token not valid!")
+      res.status(401).send(errorMessage() + "Token not valid!")
     }
   })
 
@@ -120,7 +144,7 @@ app.post('/registeruser', verifyToken, async (req, res)=>{
     }
   //token does not exist
   }else {
-      res.status(403).send(errorMessage() + "Token not valid!")
+      res.status(401).send(errorMessage() + "Token not valid!")
     }
   })
 
@@ -138,8 +162,11 @@ app.post('/test/registerResident', async (req, res)=>{
   })
 
 //register user post request
-app.post('/registerResident', async (req, res)=>{
+app.post('/registerResident', async (req, res, err) =>{
   let data = req.body //requesting the data from body
+  if (err){
+    res.send("fuck off")
+  }
   //checking the role of user
     const newUser = await registerResident(data)
     if (newUser){ //checking is registration is succesful
@@ -174,7 +201,7 @@ app.patch('/updateuser', verifyToken, async (req, res)=>{
   let data = req.body //requesting the data from body
   //checking the role of user
   if (authorize == "security" || authorize == "resident"){
-    res.send("you do not have access to update user information!")
+    res.status(404).send("you do not have access to update user information!")
   }else if (authorize == "admin" ){
     const result = await updateUser(data)
     if (result){ // checking if the user exist and updated
@@ -183,11 +210,11 @@ app.patch('/updateuser', verifyToken, async (req, res)=>{
       res.status(400).send(errorMessage() + "User does not exist!")
     }
   }else {
-      res.status(403).send(errorMessage() + "Invalid permissions")
+      res.status(401).send(errorMessage() + "Token not valid")
     }
 })
 
-///
+
 //delete user DELETE request
 app.delete('/deleteuser', verifyToken, async (req, res)=>{
   let data = req.body
@@ -215,6 +242,7 @@ app.post('/registervisitor', verifyToken, async (req, res)=>{
   let loginUser = req.user.user_id
   let data = req.body
   //checking if token is valid
+  console.log(data);
   if(authorize){
   const visitorData = await registerVisitor(data, loginUser) //register visitor
     if (visitorData){
@@ -280,19 +308,32 @@ app.delete('/deletevisitor', verifyToken, async (req, res)=>{
   }
 )
 
+
 //create a qr code for visitor
-app.get('/visitorPass/:IC_num', verifyToken, async (req, res)=>{
-  let data = req.params.IC_num
+app.patch('/createPass/:ref_num', verifyToken, async (req, res)=>{
+  let data = req.params.ref_num
   let authorize = req.user
   if (authorize.role){ //checking if token is valid
-  const uri = await qrCreate(data) //create qr code
-    if (uri){
-      res.status(200).send("QR code created for visitor! Download your visitor pass now :D\n"+ uri)
+  const success = await approvePass(data, authorize) //create qr code
+    if (success){
+      res.status(200).send("visitor is approved for a pass\n"+ success.ref_num)
     }else{
       res.status(404).send(errorMessage() + "No such visitor found")
     }
   }else {
       res.status(401).send(errorMessage() + "Not a valid token!")
+    }
+  }
+)
+
+//create a qr code for visitor
+app.get('/retrievePass/:IC_num', async (req, res)=>{
+  let data = req.params.IC_num
+  const uri = await qrCreate(data) //create qr code
+    if (uri){
+      res.status(200).send("Download your visitor pass now :D\n"+ uri)
+    }else{
+      res.status(404).send(errorMessage() + "No such visitor found")
     }
   }
 )
@@ -328,7 +369,6 @@ app.post('/findvisitorlog', verifyToken, async (req, res)=>{
     else if (authorize == "security" || authorize == "admin"){
       const result = await findLog(data) //find logs
       res.status(200).send(result)
-      console.log(result);
     }
   }
   )
@@ -361,6 +401,11 @@ async function login(data) {
     const correctPassword = await bcrypt.compare(data.password,verify.password);
     if (correctPassword){
       token = generateToken(verify)
+      if (verify.role == "admin"){
+        console.log("Admin has logged in!")
+        hosts = await user.find({}, {projection: {_id :0}}).toArray();
+        return{verify,token,hosts};
+      }
       return{verify,token};
     }else{
       return ("Wrong password D: Forgotten your password?")
@@ -459,7 +504,7 @@ async function registerVisitor(newdata, currentUser) {
         "hp" : newdata.hp_num,
         "pass": newdata.pass,
         "category" : newdata.category,
-        "visit_date" : newdata.date,
+        "visit_date" : newdata.visit_date,
         "unit" : newdata.unit,
         "user_id" : currentUser
       })
@@ -542,6 +587,20 @@ async function updateLog(newdata) {
 }
 
 //function to create qrcode file
+async function approvePass(data, currentUser){
+  if (currentUser.role == "resident"|| currentUser.role == "security"){ //only allow resident and security to update their own visitors
+    result = await visitor.findOneAndUpdate({"ref_num": data, "user_id" : currentUser.user_id },{$set : {pass : true}}, {new:true})
+  }else if (currentUser.role == "admin"){
+    result = await visitor.findOneAndUpdate({"ref_num": data},{$set : {pass : true}}, {new:true}) //allow admin to update all visitors
+  }
+  if(result== null){ //check if visitor exist
+    return 
+  }else{
+    return (result)
+  }
+}
+
+//function to create qrcode file
 async function qrCreate(data){
   visitorData = await visitor.find({"IC_num" : data}, {projection : {"ref_num" : 1 , "name" : 1 , "category" : 1 , "user_id" : 1, _id : 0}}).next() //find visitor data
   if(visitorData){ //check if visitor exist
@@ -576,7 +635,7 @@ function currentTime(){
 
 //generate token for login authentication
 function generateToken(loginProfile){
-  return jwt.sign(loginProfile,process.env.cibai, { expiresIn: '1h' });
+  return jwt.sign(loginProfile, process.env.bigSecret , { expiresIn: '1h' });
 }
 
 //verify generated tokens
@@ -588,7 +647,7 @@ function verifyToken(req, res, next){
   }
   let header = req.headers.authorization
   let token = header.split(' ')[1] //checking header //process.env.fuckyou
-  jwt.verify(token,process.env.cibai,function(err,decoded){
+  jwt.verify(token,process.env.bigSecret,function(err,decoded){
     if(err) {
       res.status(401).send(errorMessage() + "Token is not valid D:, go to the counter to exchange (joke)")
       return
