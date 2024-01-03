@@ -20,7 +20,7 @@ const limiter = rateLimit({
 	legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 })
 
-const uri = "ElvinLee:1234567890@elvindata.qte1ayi.mongodb.net/test" ;
+const uri = "mongodb+srv://ElvinLee:1234567890@elvindata.qte1ayi.mongodb.net/test";
 const credentials = process.env.mongocert;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
