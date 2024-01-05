@@ -21,7 +21,7 @@ const limiter = rateLimit({
 })
 
 const uri = "mongodb+srv://ElvinLee:1234567890@elvindata.qte1ayi.mongodb.net/test";
-const credentials = process.env.mongocert;
+//const credentials = process.env.mongocert;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
